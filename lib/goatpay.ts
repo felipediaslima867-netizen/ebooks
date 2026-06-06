@@ -1,20 +1,19 @@
-// lib/goatpay.ts
-// ✅ REVISADO — Integração completa com GoatPay
+// ─── lib/goatpay.ts ───
 
 export interface GoatPayCheckoutPayload {
-  amount: number;       // valor em centavos
+  amount: number;
   currency: "BRL";
-  productId: string;   // ex: "ebook-001"
+  productId: string;
   productName: string;
-  successUrl: string;  // URL de retorno após pagamento aprovado
+  successUrl: string;
   cancelUrl: string;
-  webhookUrl: string;  // endpoint que recebe confirmação
+  webhookUrl: string;
   metadata?: Record<string, string>;
 }
 
 export interface GoatPayCheckoutResponse {
   checkoutId: string;
-  checkoutUrl: string; // URL para redirecionar o usuário
+  checkoutUrl: string;
   expiresAt: string;
 }
 
@@ -22,12 +21,12 @@ export interface GoatPayWebhookEvent {
   event: "payment.approved" | "payment.failed" | "payment.pending" | "payment.refunded";
   checkoutId: string;
   paymentId: string;
-  productId: string;   // ID do produto comprado — ESSENCIAL para download
+  productId: string;
   amount: number;
   currency: string;
   email?: string;
   timestamp: string;
-  signature: string;   // HMAC-SHA256 para validação
+  signature: string;
 }
 
 const GOATPAY_BASE_URL = process.env.GOATPAY_API_URL ?? "https://api.goatpay.com/v1";
@@ -39,7 +38,7 @@ export async function createCheckout(
   payload: GoatPayCheckoutPayload
 ): Promise<GoatPayCheckoutResponse> {
   if (!GOATPAY_API_KEY) {
-    throw new Error("GOATPAY_API_KEY não configurada nas variáveis de ambiente.");
+    throw new Error("GOATPAY_API_KEY não configurada.");
   }
 
   const res = await fetch(`${GOATPAY_BASE_URL}/checkout`, {
@@ -59,11 +58,24 @@ export async function createCheckout(
   return res.json() as Promise<GoatPayCheckoutResponse>;
 }
 
+// ─── Consultar Status (Renomeada para bater com a importação no seu app) ─────
+export async function getGoatPayOrderStatus(checkoutId: string): Promise<{
+  status: "pending" | "approved" | "failed" | "refunded";
+  productId?: string;
+}> {
+  const res = await fetch(`${GOATPAY_BASE_URL}/checkout/${checkoutId}`, {
+    headers: { Authorization: `Bearer ${GOATPAY_API_KEY}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(`GoatPay status error ${res.status}`);
+  }
+
+  return res.json();
+}
+
 // ─── Validar Assinatura do Webhook ────────────────────────────────────────────
-/**
- * Valida o HMAC-SHA256 enviado pela GoatPay no header X-GoatPay-Signature.
- * OBRIGATÓRIO — nunca entregue download sem validar.
- */
 export async function validateWebhookSignature(
   rawBody: string,
   signature: string
@@ -90,7 +102,6 @@ export async function validateWebhookSignature(
 
   const expected = Buffer.from(signed).toString("hex");
 
-  // Comparação segura (timing-safe)
   return timingSafeEqual(expected, signature);
 }
 
@@ -101,22 +112,4 @@ function timingSafeEqual(a: string, b: string): boolean {
     result |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return result === 0;
-}
-
-// ─── Consultar Status de Pagamento ────────────────────────────────────────────
-export async function getPaymentStatus(checkoutId: string): Promise<{
-  status: "pending" | "approved" | "failed" | "refunded";
-  productId?: string;
-}> {
-  const res = await fetch(`${GOATPAY_BASE_URL}/checkout/${checkoutId}`, {
-    headers: { Authorization: `Bearer ${GOATPAY_API_KEY}` },
-    // Sem cache — sempre busca o status mais recente
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error(`GoatPay status error ${res.status}`);
-  }
-
-  return res.json();
 }
